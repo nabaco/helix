@@ -29,12 +29,26 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: runtime/grammars/
 
       - name: Fetch tree-sitter grammars
         run: cargo run --package=helix-loader --bin=hx-loader
 
       - name: Bundle grammars
-        run: tar cJf grammars.tar.xz -C runtime/grammars/sources .
+        run: |
+          if [ -f grammars.tar.xz ]; then
+            set +e
+            tar --compare --file grammars.tar.xz --directory runtime/grammars/sources
+            res=$?
+            set -e
+          else
+            res=1
+          fi
+
+          if [ $res -eq 1 ]; then
+            tar --create --xz --file grammars.tar.xz --directory runtime/grammars/sources .
+          fi
 
       - uses: actions/upload-artifact@v3
         with:
@@ -55,6 +69,9 @@ jobs:
       # Emit backtraces on panics.
       RUST_BACKTRACE: 1
     runs-on: ${{ matrix.os }}
+    container:
+      image: ${{ matrix.image }}
+      options: --privileged ${{ matrix.options }} # Privileged mode is needed to load fuse module.
     strategy:
       fail-fast: false # don't fail other jobs if one fails
       matrix:
@@ -62,12 +79,14 @@ jobs:
         include:
         - build: x86_64-linux
           os: ubuntu-latest
+          image: rust:alpine
           rust: stable
           target: x86_64-unknown-linux-gnu
           cross: false
         - build: aarch64-linux
           os: ubuntu-latest
           rust: stable
+          image: rust:alpine
           target: aarch64-unknown-linux-gnu
           cross: true
         - build: riscv64-linux
@@ -113,7 +132,19 @@ jobs:
           mkdir -p runtime/grammars/sources
           tar xJf grammars/grammars.tar.xz -C runtime/grammars/sources
 
+      - name: Prepare container
+        # if: "matrix.image != ''"
+        if: matrix.build == 'aarch64-linux' || matrix.build == 'x86_64-linux'
+        run: |
+          # apt-get update
+          # apt-get install -y fuse libfuse2 # For linuxdeploy.
+          apk add fuse git
+          # Workaround for https://github.com/actions/checkout/issues/766.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # rustup target add ${{ matrix.target }}
+
       - name: Install ${{ matrix.rust }} toolchain
+        if: "matrix.image == ''"
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -131,10 +162,20 @@ jobs:
         # echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
         # echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
 
+      - uses: Swatinem/rust-cache@v2
+
       - name: Show command used for Cargo
         run: |
           echo "cargo command is: ${{ env.CARGO }}"
           echo "target flag is: ${{ env.TARGET_FLAGS }}"
+
+      - name: Find macOS X SDK
+        if: "matrix.build == 'aarch64-macos'"
+        run: |
+          SDKROOT=$(xcrun -sdk macosx --show-sdk-path)
+          MACOSX_DEPLOYMENT_TARGET=$(xcrun -sdk macosx --show-sdk-platform-version)
+          echo "SDKROOT=$SDKROOT" >> $GITHUB_ENV
+          echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET" >> $GITHUB_ENV
 
       - name: Run cargo test
         if: "!matrix.skip_tests"
@@ -268,7 +309,7 @@ jobs:
 
       - name: Upload binaries to release
         uses: svenstaro/upload-release-action@v2
-        if: env.preview == 'false'
+        #if: env.preview == 'false'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: dist/*
