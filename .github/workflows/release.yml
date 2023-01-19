@@ -29,6 +29,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: runtime/grammars/
 
       - name: Fetch tree-sitter grammars
         run: cargo run --package=helix-loader --bin=hx-loader
@@ -63,12 +65,12 @@ jobs:
         - build: x86_64-linux
           os: ubuntu-latest
           rust: stable
-          target: x86_64-unknown-linux-gnu
+          target: x86_64-unknown-linux-musl
           cross: false
         - build: aarch64-linux
           os: ubuntu-latest
           rust: stable
-          target: aarch64-unknown-linux-gnu
+          target: aarch64-unknown-linux-musl
           cross: true
         - build: riscv64-linux
           os: ubuntu-latest
@@ -113,11 +115,17 @@ jobs:
           mkdir -p runtime/grammars/sources
           tar xJf grammars/grammars.tar.xz -C runtime/grammars/sources
 
+      - name: Install MUSL
+        if: matrix.build == 'aarch64-linux' || matrix.build == 'x86_64-linux'
+        run: sudo apt-get update && sudo apt-get install -y musl
+
       - name: Install ${{ matrix.rust }} toolchain
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
           target: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
 
       # Install a pre-release version of Cross
       # TODO: We need to pre-install Cross because we need cross-rs/cross#591 to
