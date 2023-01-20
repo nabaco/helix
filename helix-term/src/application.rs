@@ -392,22 +392,23 @@ impl Application {
             scroll: None,
             jobs: &mut self.jobs,
         };
-        let parts = command.split_whitespace().collect::<Vec<&str>>();
+        let mut parts = command.split_whitespace().collect::<Vec<&str>>();
         if parts.is_empty() {
             return;
         }
 
         let event = crate::ui::PromptEvent::Validate;
         // Handle numeric commands
-        let cmd = if parts.len() == 1 && parts[0].parse::<usize>().ok().is_some() {
-            "goto"
+        let command = if parts.len() == 1 && parts[0].parse::<usize>().ok().is_some() {
+            parts.insert(0, "goto");
+            format!("goto {}", parts[1])
         } else {
-            parts[0]
+            command.to_string()
         };
 
         // Handle typable commands
-        if let Some(cmd) = typed::TYPABLE_COMMAND_MAP.get(cmd) {
-            let shellwords = Shellwords::from(command);
+        if let Some(cmd) = typed::TYPABLE_COMMAND_MAP.get(parts[0]) {
+            let shellwords = Shellwords::from(command.as_str());
             let args = shellwords.words();
 
             if let Err(e) = (cmd.fun)(&mut cx, &args[1..], event) {
