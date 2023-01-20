@@ -17,6 +17,7 @@ pub struct Args {
     pub log_file: Option<PathBuf>,
     pub config_file: Option<PathBuf>,
     pub files: Vec<(PathBuf, Position)>,
+    pub line_num: u32,
 }
 
 impl Args {
@@ -71,6 +72,22 @@ impl Args {
                             'h' => args.display_help = true,
                             _ => anyhow::bail!("unexpected short arg {}", chr),
                         }
+                    }
+                }
+                arg if arg.starts_with('+') => {
+                    let arg = arg.get(1..).unwrap();
+                    let mut line_num: usize;
+                    match usize::from_str_radix(arg, 10) {
+                        Ok(n) => line_num = n,
+                        _ => anyhow::bail!("bad line number after +"),
+                    }
+                    if line_num > 0 {
+                        line_num -= 1;
+                    }
+                    if let Some(file) = args.files.last_mut() {
+                        file.1 = Position::new(line_num, 0);
+                    } else {
+                        anyhow::bail!("Line number provided before file");
                     }
                 }
                 arg => args.files.push(parse_file(arg)),

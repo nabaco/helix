@@ -73,6 +73,7 @@ FLAGS:
     -V, --version                  Prints version information
     --vsplit                       Splits all given files vertically into different windows
     --hsplit                       Splits all given files horizontally into different windows
+    +N                             Goto line number N, can be mentioned after each file
 ",
         env!("CARGO_PKG_NAME"),
         VERSION_AND_GIT_HASH,
