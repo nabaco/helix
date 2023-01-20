@@ -1,5 +1,6 @@
 use arc_swap::{access::Map, ArcSwap};
 use futures_util::Stream;
+use helix_core::shellwords::Shellwords;
 use helix_core::{
     diagnostic::{DiagnosticTag, NumberOrString},
     path::get_relative_path,
@@ -21,6 +22,7 @@ use tui::backend::Backend;
 use crate::{
     args::Args,
     commands::apply_workspace_edit,
+    commands::typed,
     compositor::{Compositor, Event},
     config::Config,
     job::Jobs,
@@ -258,7 +260,7 @@ impl Application {
         let signals = Signals::new([signal::SIGTSTP, signal::SIGCONT, signal::SIGUSR1])
             .context("build signal handler")?;
 
-        let app = Self {
+        let mut app = Self {
             compositor,
             terminal,
             editor,
@@ -273,6 +275,12 @@ impl Application {
             lsp_progress: LspProgressMap::new(),
             last_render: Instant::now(),
         };
+
+        if !args.commands.is_empty() {
+            for cmd in args.commands {
+                app.execute_command(cmd.as_str());
+            }
+        }
 
         Ok(app)
     }
@@ -375,6 +383,39 @@ impl Application {
             {
                 self.editor.reset_idle_timer();
             }
+        }
+    }
+
+    pub fn execute_command(&mut self, command: &str) {
+        let mut cx = crate::compositor::Context {
+            editor: &mut self.editor,
+            scroll: None,
+            jobs: &mut self.jobs,
+        };
+        let parts = command.split_whitespace().collect::<Vec<&str>>();
+        if parts.is_empty() {
+            return;
+        }
+
+        let event = crate::ui::PromptEvent::Validate;
+        // Handle numeric commands
+        let cmd = if parts.len() == 1 && parts[0].parse::<usize>().ok().is_some() {
+            "goto"
+        } else {
+            parts[0]
+        };
+
+        // Handle typable commands
+        if let Some(cmd) = typed::TYPABLE_COMMAND_MAP.get(cmd) {
+            let shellwords = Shellwords::from(command);
+            let args = shellwords.words();
+
+            if let Err(e) = (cmd.fun)(&mut cx, &args[1..], event) {
+                cx.editor.set_error(format!("{}", e));
+            }
+        } else {
+            cx.editor
+                .set_error(format!("no such command: '{}'", parts[0]));
         }
     }
 

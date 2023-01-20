@@ -18,6 +18,7 @@ pub struct Args {
     pub config_file: Option<PathBuf>,
     pub files: Vec<(PathBuf, Position)>,
     pub line_num: u32,
+    pub commands: Vec<String>,
 }
 
 impl Args {
@@ -74,21 +75,23 @@ impl Args {
                         }
                     }
                 }
+                // arg if arg.starts_with('+') => {
+                //     let arg = arg.get(1..).unwrap();
+                //     let mut line_num = match usize::from_str_radix(arg, 10) {
+                //         Ok(n) => n,
+                //         _ => anyhow::bail!("bad line number after +"),
+                //     }
+                //     if line_num > 0 {
+                //         line_num -= 1;
+                //     }
+                //     if let Some(file) = args.files.last_mut() {
+                //         file.1 = Position::new(line_num, 0);
+                //     } else {
+                //         anyhow::bail!("Line number provided before file");
+                //     }
+                // }
                 arg if arg.starts_with('+') => {
-                    let arg = arg.get(1..).unwrap();
-                    let mut line_num: usize;
-                    match usize::from_str_radix(arg, 10) {
-                        Ok(n) => line_num = n,
-                        _ => anyhow::bail!("bad line number after +"),
-                    }
-                    if line_num > 0 {
-                        line_num -= 1;
-                    }
-                    if let Some(file) = args.files.last_mut() {
-                        file.1 = Position::new(line_num, 0);
-                    } else {
-                        anyhow::bail!("Line number provided before file");
-                    }
+                    args.commands.push(arg.get(1..).unwrap().to_string());
                 }
                 arg => args.files.push(parse_file(arg)),
             }
