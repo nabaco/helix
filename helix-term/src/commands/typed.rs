@@ -486,6 +486,83 @@ fn set_line_ending(
     Ok(())
 }
 
+fn hunk_reset(
+    cx: &mut compositor::Context,
+    args: &[Cow<str>],
+    event: PromptEvent,
+) -> anyhow::Result<()> {
+    if event != PromptEvent::Validate {
+        return Ok(());
+    }
+
+    ensure!(args.is_empty(), ":hunk-reset takes no arguments");
+
+    let (view, doc) = current!(cx.editor);
+
+    let text = doc.text().slice(..);
+    let diff_handle = if let Some(diff_handle) = doc.diff_handle() {
+        diff_handle
+    } else {
+        cx.editor
+            .set_status("Diff is not available in current buffer");
+        anyhow::bail!("No diff hunk to reset");
+    };
+
+    // Delete after
+    let after_selection = doc.selection(view.id).clone().transform(|range| {
+        let hunks = diff_handle.hunks();
+        let line = range.cursor_line(text);
+        let hunk_idx = if let Some(hunk_idx) = hunks.hunk_at(line as u32, false) {
+            hunk_idx
+        } else {
+            return range;
+        };
+        let hunk = hunks.nth_hunk(hunk_idx).after;
+
+        let start = text.line_to_char(hunk.start as usize);
+        let end = text.line_to_char(hunk.end as usize);
+        Range::new(start, end)
+    });
+
+    let remove_transaction =
+        Transaction::change_by_selection(doc.text(), &after_selection, |range| {
+            (range.from(), range.to(), None)
+        });
+
+    // Add before
+    let before_selection = doc.selection(view.id).clone().transform(|range| {
+        let hunks = diff_handle.hunks();
+        let line = range.cursor_line(text);
+        let hunk_idx = if let Some(hunk_idx) = hunks.hunk_at(line as u32, false) {
+            hunk_idx
+        } else {
+            return range;
+        };
+        let hunk = hunks.nth_hunk(hunk_idx).before;
+
+        let start = text.line_to_char(hunk.start as usize);
+        let end = text.line_to_char(hunk.end as usize);
+        Range::new(start, end)
+    });
+
+    let _add_transaction =
+        Transaction::change_by_selection(doc.text(), &before_selection, |range| {
+            (range.from(), range.to(), None)
+        });
+
+    let success = apply_transaction(&remove_transaction, doc, view);
+    if !success {
+        anyhow::bail!("Transaction failed");
+    }
+
+    let success = apply_transaction(&add_transaction, doc, view);
+    if success {
+        Ok(())
+    } else {
+        anyhow::bail!("Transaction failed");
+    }
+}
+
 fn earlier(
     cx: &mut compositor::Context,
     args: &[Cow<str>],
@@ -1946,6 +2023,13 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
             #[cfg(feature = "unicode-lines")]
             doc: "Set the document's default line ending. Options: crlf, lf, cr, ff, nel.",
             fun: set_line_ending,
+            completer: None,
+        },
+        TypableCommand {
+            name: "hunk-reset",
+            aliases: &["hr"],
+            doc: "Reset change hunk.",
+            fun: hunk_reset,
             completer: None,
         },
         TypableCommand {
